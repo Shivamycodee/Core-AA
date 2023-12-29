@@ -57,7 +57,6 @@ async function tokenApprove(SCWAddress,tokenIn,toApprove) {
       singer
     );
 
-
     const finalUserOpHash = await EntryPoint.getUserOpHash(
       userOperation
     );
