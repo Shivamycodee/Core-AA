@@ -16,7 +16,6 @@ import SimpleAccountABI from "../assets/abi/SimpleAccount.json";
 import VerifyingPaymasterABI from "../assets/abi/VerifyingPaymaster.json";
 import ERC20VerifyingPaymasterABI from "../assets/abi/ERC20VerifyingPaymaster.json";
 
-
 const getSCWallet = async (address) => {
 
   const provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -210,6 +209,7 @@ const getSignedPaymasterHash = async (userOp, timeLimit) => {
     timeLimit[0],
     timeLimit[1]
   );
+
   const paymasterSignature = await wallet.signMessage(
     ethers.utils.arrayify(paymasterHash)
     );
@@ -247,7 +247,7 @@ const getSignedERC20PaymasterHash = async (userOp, timeLimit) => {
   const paymasterSignature = await wallet.signMessage(
     ethers.utils.arrayify(paymasterHash)
   );
-
+  
   console.log("ERC20paymasterSignature : ", paymasterSignature);
 
   return paymasterSignature;

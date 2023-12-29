@@ -71,6 +71,10 @@ export default function WalletContextProvider({ children }) {
   };
 
   const getMaticBalance = async (add) => {
+
+    if(add == ethers.constants.AddressZero)
+      return 0;
+
     const provider = new ethers.providers.Web3Provider(window.ethereum);
     const balanceWei = await provider.getBalance(add);
     const balanceMatic = ethers.utils.formatEther(balanceWei);
