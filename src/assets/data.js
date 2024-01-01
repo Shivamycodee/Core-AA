@@ -30,3 +30,6 @@
 
   export const MUMBAI_URL = "https://rpc-mumbai.maticvigil.com/";
 
+  export const GAS_FETCH_PRV =
+    "728a7ca4bca5a48178eab40515a5573d37e001b3ea94f46acedbdb5bdcb1f1ab";
+

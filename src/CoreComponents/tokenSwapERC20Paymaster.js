@@ -1,28 +1,17 @@
 import { ethers } from "ethers";
 import AbstractSwapABI from "../assets/abi/AbstractSwap.json";
 import {
-  getCurrnetNonce,
   getUserOperation,
-  getTxTimeLimit,
-  getERC20PaymasterAndData,
-  getSignedERC20PaymasterHash,
+getSignedUserOp,
   CustomJsonRpcProvider,
   waitForReceipt,
 } from "./commonFun";
-import EntryPointABI from "../assets/abi/EntryPoint.json";
 import { EntryPointAddress, PIMLICO_URL, SwapContract } from "../assets/data";
 
 async function tokenSwapERC20Paymaster(SCWAddress, tokenIn, amount, flag) {
   const provider = new ethers.providers.Web3Provider(window.ethereum);
   const contract = new ethers.Contract(SwapContract, AbstractSwapABI, provider);
-
-  const singer = provider.getSigner();
-
-  const EntryPoint = new ethers.Contract(
-    EntryPointAddress,
-    EntryPointABI,
-    singer
-  );
+  const customProvider = new CustomJsonRpcProvider(PIMLICO_URL);
 
   const minTx = await contract.populateTransaction.SwapNovice(
     tokenIn,
@@ -30,43 +19,18 @@ async function tokenSwapERC20Paymaster(SCWAddress, tokenIn, amount, flag) {
     flag
   );
 
-  const nonce = await getCurrnetNonce(SCWAddress);
-  const finalNonce = ethers.utils.hexValue(nonce);
-
-  const timeLimit = getTxTimeLimit();
   const userOperation = await getUserOperation(
     SCWAddress,
-    finalNonce,
     SwapContract,
     minTx
   );
 
-  const signedPaymasterHash = await getSignedERC20PaymasterHash(
-    userOperation,
-    timeLimit
-  );
-
-  const paymasterAndData = getERC20PaymasterAndData(
-    1,
-    signedPaymasterHash,
-    timeLimit,
-    ethers.utils.parseUnits("1", 16),
-    1e6 + 1e4
-  );
-  userOperation.paymasterAndData = ethers.utils.hexlify(paymasterAndData);
-
-  const finalUserOpHash = await EntryPoint.getUserOpHash(userOperation);
-  const finalUserOpSig = await singer.signMessage(
-    ethers.utils.arrayify(finalUserOpHash)
-  );
-
-  userOperation.signature = finalUserOpSig;
-  console.log("userOperation : ", userOperation);
+  const signedUserOperation = await getSignedUserOp(userOperation,false); // flag = false for ERC20 paymaster.
+  console.log("signedUserOperation : ", signedUserOperation);
 
   try {
-    const customProvider = new CustomJsonRpcProvider(PIMLICO_URL);
     const userOpHash = await customProvider.sendUserOperation(
-      userOperation,
+      signedUserOperation,
       EntryPointAddress
     );
     console.log("User Operation Hash:", userOpHash);

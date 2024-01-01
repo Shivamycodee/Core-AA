@@ -10,6 +10,8 @@ import {
   OracleAggregator,
   CoreTokenAddress,
   SAFEPOOL_PRV_KEY,
+  PIMLICO_URL,
+  GAS_FETCH_PRV,
 } from "../assets/data";
 import  SimpleAccountFactoryABI from "../assets/abi/SimpleAccountFactory.json"
 import SimpleAccountABI from "../assets/abi/SimpleAccount.json";
@@ -39,21 +41,22 @@ const getCurrnetNonce = async (address) => {
     EntryPointABI,
     provider
   );
-  const nonce = await contract.getNonce(address,0);
+  const _nonce = await contract.getNonce(address,0);
+  const nonce = ethers.utils.hexValue(_nonce);
   return nonce;
     
 } 
 
-const getUserOperation = async (SCWAddress,NONCE,callContract,minTx) => {
+const getUserOperation = async (SCWAddress,callContract,minTx) => {
 
   const provider = new ethers.providers.Web3Provider(window.ethereum);
-
-
   const simpleAccount = new ethers.Contract(
         SCWAddress,
         SimpleAccountABI,
         provider
       );
+
+  const NONCE = await getCurrnetNonce(SCWAddress);
 
   const userOperation = {
     sender: SCWAddress,
@@ -64,72 +67,42 @@ const getUserOperation = async (SCWAddress,NONCE,callContract,minTx) => {
       0,
       minTx.data,
     ]),
-    callGasLimit: 112489,
-    verificationGasLimit: 87538,
-    preVerificationGas: 93636,
-    maxFeePerGas: 100_000_000_000,
-    maxPriorityFeePerGas: 100_000_000_000,
+    callGasLimit: 0, // 124651
+    verificationGasLimit: 0, // 61714
+    preVerificationGas: 0, // 44752
+    maxFeePerGas: 70_000_000_000,
+    maxPriorityFeePerGas: 50_000_000_000,
     paymasterAndData: "0x",
     signature: "0x",
   };
 
-  if(SCWAddress == ethers.constants.AddressZero){
+  if (SCWAddress == ethers.constants.AddressZero) {
 
-    const signer = provider.getSigner();
-    const address = await signer.getAddress();
-    const res = await getInitCode(address);
+    console.log("DEPLOYEING CONTRACT WALLET...")
 
-    // userOperation.initCode = res[0];
-    userOperation.sender = res[1];
+      const signer = provider.getSigner();
+      const address = await signer.getAddress();
+      const res = await getInitCode(address);
 
-  }
+      // userOperation.initCode = res[0];
+      userOperation.sender = res[1];
+    }
 
 
+    
+  const signPaymasterAndData = await getPaymasterAndData(userOperation);
+  userOperation.paymasterAndData = signPaymasterAndData.paymasterAndData;
+    
+  const res = await fetchGasValues(userOperation);  
+  userOperation.callGasLimit = res[0].toNumber();
+  userOperation.verificationGasLimit = res[1].toNumber() + 10000;
+  userOperation.preVerificationGas = res[2].toNumber();
+    
   console.log("userOperation : ", userOperation);
-
   return userOperation;
 
 
 };
-
-const getUserOpHash = async (op, entryPoint, chainId) => {
-
-  const userOpHash = ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
-      [
-        "address",
-        "uint256",
-        "bytes",
-        "bytes",
-        "uint256",
-        "uint256",
-        "uint256",
-        "uint256",
-        "uint256",
-        "bytes",
-      ],
-      [
-        op.sender,
-        op.nonce,
-        op.initCode,
-        op.callData,
-        op.callGasLimit,
-        op.verificationGasLimit,
-        op.preVerificationGas,
-        op.maxFeePerGas,
-        op.maxPriorityFeePerGas,
-        op.paymasterAndData,
-      ]
-    )
-  );
-  const enc = ethers.utils.defaultAbiCoder.encode(
-    ["bytes32", "address", "uint256"],
-    [userOpHash, entryPoint, BigInt(chainId)]
-  );
-
-  return ethers.utils.keccak256(enc);
-};
-
 
 function getTxTimeLimit() {
   const currentTime = Math.floor(Date.now() / 1000); // mili to sec
@@ -137,7 +110,13 @@ function getTxTimeLimit() {
   return [currentTime + 3600, tenMinutesLater];
 }
 
-function getPaymasterAndData(signedPaymasterHash, timeLimit) {
+async function getPaymasterAndData(userOperation) {
+
+  const timeLimit = getTxTimeLimit();
+  const signedPaymasterHash = await getSignedPaymasterHash(
+    userOperation,
+    timeLimit
+  );
 
   const paymasterAndData = ethers.utils.concat([
     VerifyingPaymasterAddress,
@@ -147,18 +126,22 @@ function getPaymasterAndData(signedPaymasterHash, timeLimit) {
     ),
     signedPaymasterHash,
   ]);
-  return paymasterAndData;
+
+  userOperation.paymasterAndData = ethers.utils.hexlify(paymasterAndData);
+  return userOperation;
 }
 
-function getERC20PaymasterAndData(
-  priceSource,
-  paymasterSignature,
-  timeLimit,
-  exchangeRate,
-  priceMarkup
-) {
+async function getERC20PaymasterAndData(userOperation) {
 
+  const timeLimit = getTxTimeLimit();
+  const paymasterSignature = await getSignedERC20PaymasterHash(
+    userOperation,
+    timeLimit
+  );
+  const priceSource = 1;
+  const exchangeRate = ethers.utils.parseUnits("1", 16);
   const priceSourceBytes = numberToHexString(priceSource);
+  const priceMarkup = 1e6 + 1e4;
 
   const paymasterAndData = ethers.utils.concat([
     ERC20VerifierAddress,
@@ -176,8 +159,9 @@ function getERC20PaymasterAndData(
     ),
     paymasterSignature,
   ]);
-
-  return paymasterAndData;
+  
+  userOperation.paymasterAndData = ethers.utils.hexlify(paymasterAndData);
+  return userOperation;
 }
 
 
@@ -282,7 +266,35 @@ const getInitCode = async(address)=>{
 
 }
 
+const fetchGasValues = async (userOperation)=>{
 
+    const tempProvider = new ethers.providers.JsonRpcProvider(MUMBAI_URL);
+    const tempWallet = new ethers.Wallet(GAS_FETCH_PRV, tempProvider);
+
+    const EntryPoint = new ethers.Contract(
+      EntryPointAddress,
+      EntryPointABI,
+      tempWallet
+    );
+     
+    const finalUserOpHash = await EntryPoint.getUserOpHash(userOperation);
+    const finalUserOpSig = await tempWallet.signMessage(
+      ethers.utils.arrayify(finalUserOpHash)
+    );
+
+    userOperation.signature = finalUserOpSig;
+    const customProvider = new CustomJsonRpcProvider(PIMLICO_URL);
+
+     const respond = await customProvider.getUserOperationGasEstimate(
+       userOperation
+     );
+
+    const callGasLimit = ethers.BigNumber.from(respond.callGasLimit);
+    const verificationGasLimit = ethers.BigNumber.from(respond.verificationGasLimit);
+    const preVerificationGas = ethers.BigNumber.from(respond.preVerificationGas);
+    return [callGasLimit, verificationGasLimit, preVerificationGas];
+
+}
 
 
 function convertBigIntToString(obj) {
@@ -296,6 +308,7 @@ function convertBigIntToString(obj) {
 }
 
 class CustomJsonRpcProvider extends ethers.providers.JsonRpcProvider {
+
   async sendUserOperation(userOperation, entryPoint) {
     const method = "eth_sendUserOperation";
     // Convert BigInt to string
@@ -310,6 +323,14 @@ class CustomJsonRpcProvider extends ethers.providers.JsonRpcProvider {
     const params = [userOpHash];
     return this.send(method, params);
   }
+
+  async getUserOperationGasEstimate(userOperation){
+    const method = "eth_estimateUserOperationGas";
+    const params = [userOperation,EntryPointAddress];
+    return this.send(method, params);
+  }
+
+
 }
 
 async function waitForReceipt(
@@ -332,17 +353,44 @@ async function waitForReceipt(
 }
 
 
+async function getSignedUserOp(userOperation,flag) {
+
+ if(flag){
+   console.log("using paymaster...")
+   userOperation = await getPaymasterAndData(userOperation);
+  }
+  else{
+    console.log("using ERC20 paymaster...")
+    userOperation = await getERC20PaymasterAndData(userOperation);
+  }
+  
+  const provider = new ethers.providers.Web3Provider(window.ethereum);
+  const signer = provider.getSigner();
+  const EntryPoint = new ethers.Contract(
+    EntryPointAddress,
+    EntryPointABI,
+    signer
+  );
+
+  const finalUserOpHash = await EntryPoint.getUserOpHash(userOperation);
+  const finalUserOpSig = await signer.signMessage(
+    ethers.utils.arrayify(finalUserOpHash)
+  );
+
+  userOperation.signature = finalUserOpSig;
+  return userOperation;
+}
+
 
 export {
-  getTxTimeLimit,
   getPaymasterAndData,
   getERC20PaymasterAndData,
   numberToHexString,
-  getCurrnetNonce,
   getSCWallet,
   getUserOperation,
   getSignedPaymasterHash,
   CustomJsonRpcProvider,
+  getSignedUserOp,
   getSignedERC20PaymasterHash,
   getInitCode,
   waitForReceipt,
