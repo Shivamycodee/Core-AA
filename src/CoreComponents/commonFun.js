@@ -71,7 +71,7 @@ const getUserOperation = async (SCWAddress,callContract,minTx) => {
     verificationGasLimit: 0, // 61714
     preVerificationGas: 0, // 44752
     maxFeePerGas: 70_000_000_000,
-    maxPriorityFeePerGas: 50_000_000_000,
+    maxPriorityFeePerGas: 70_000_000_000,
     paymasterAndData: "0x",
     signature: "0x",
   };
@@ -83,19 +83,18 @@ const getUserOperation = async (SCWAddress,callContract,minTx) => {
       const signer = provider.getSigner();
       const address = await signer.getAddress();
       const res = await getInitCode(address);
-
       // userOperation.initCode = res[0];
       userOperation.sender = res[1];
     }
-
-
     
-  const signPaymasterAndData = await getPaymasterAndData(userOperation);
-  userOperation.paymasterAndData = signPaymasterAndData.paymasterAndData;
+  const userOpWithPaymasterAndData = await getPaymasterAndData(
+    userOperation
+  );
+  userOperation.paymasterAndData = userOpWithPaymasterAndData.paymasterAndData;
     
   const res = await fetchGasValues(userOperation);  
   userOperation.callGasLimit = res[0].toNumber();
-  userOperation.verificationGasLimit = res[1].toNumber() + 10000;
+  userOperation.verificationGasLimit = res[1].toNumber() + 1000;
   userOperation.preVerificationGas = res[2].toNumber();
     
   console.log("userOperation : ", userOperation);
