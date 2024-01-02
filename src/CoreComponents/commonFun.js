@@ -83,7 +83,7 @@ const getUserOperation = async (SCWAddress,callContract,minTx) => {
       const signer = provider.getSigner();
       const address = await signer.getAddress();
       const res = await getInitCode(address);
-      // userOperation.initCode = res[0];
+      userOperation.initCode = res[0];
       userOperation.sender = res[1];
     }
     
@@ -250,14 +250,13 @@ const getInitCode = async(address)=>{
     signer
   );
 
-
-  // const initCode = ethers.utils.hexConcat([
-  //   SimpleAccountFactoryAddress,
-  //   contract.interface.encodeFunctionData("createAccount",[address,0]),
-  // ]);
-  const initCode = "0x";
+  const initCode = ethers.utils.hexConcat([
+    SimpleAccountFactoryAddress,
+    contract.interface.encodeFunctionData("createAccount",[address,0]),
+  ]);
   
-  await contract.createAccount(address,0);
+  // const initCode = "0x";
+  // await contract.createAccount(address,0);
   const _SCWAddress = await contract.getAddress(address,0);
   console.log("SCWAddress : ", _SCWAddress);
 
